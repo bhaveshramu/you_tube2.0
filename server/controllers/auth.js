@@ -213,7 +213,6 @@ if (requiresOTP) {
     });
 
     // Send exactly one email
-    console.log("About to send OTP email...");
 
 await sendOTPEmail(email, otp);
 
