@@ -213,9 +213,13 @@ if (requiresOTP) {
     });
 
     // Send exactly one email
-    await sendOTPEmail(email, otp);
+    console.log("About to send OTP email...");
 
-    console.log("OTP sent successfully to:", email);
+await sendOTPEmail(email, otp);
+
+console.log("OTP email function completed.");
+
+console.log("OTP sent successfully to:", email);
 
     return res.status(200).json({
       requiresOTP: true,
