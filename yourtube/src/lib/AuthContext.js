@@ -2,6 +2,7 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
+  browserPopupRedirectResolver,
 } from "firebase/auth";
 
 import {
@@ -213,14 +214,13 @@ export const UserProvider = ({ children }) => {
 
   const handlegooglesignin = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
 
       // onAuthStateChanged will handle the login
     } catch (error) {
-      console.error(
-        "Google sign-in error:",
-        error
-      );
+  console.error("Google sign-in error:", error);
+  console.error("Error code:", error?.code);
+  console.error("Error message:", error?.message);
     }
   };
 
