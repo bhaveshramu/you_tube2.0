@@ -20,6 +20,7 @@ export const sendOTPEmail = async (email, otp) => {
       servername: "smtp.gmail.com",
     },
   });
+  console.log("About to call sendMail...")
 
   const info = await transporter.sendMail({
     from: process.env.EMAIL,
@@ -37,6 +38,6 @@ export const sendOTPEmail = async (email, otp) => {
       <p>If you did not attempt to log in, please secure your account.</p>
     `,
   });
-
+  console.log("sendMail completed. Info:");
   console.log("OTP email sent:", info.messageId);
 };
