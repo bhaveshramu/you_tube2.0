@@ -8,12 +8,6 @@ export const sendSubscriptionEmail = async (
   orderId
 ) => {
 
-  console.log("EMAIL:", process.env.EMAIL);
-  console.log(
-    "EMAIL_PASSWORD:",
-    process.env.EMAIL_PASSWORD ? "wlvwaqdomfvpphdq" : "Missing"
-  );
-
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
