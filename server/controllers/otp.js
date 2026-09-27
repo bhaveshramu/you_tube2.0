@@ -1,5 +1,5 @@
 import OTP from "../Modals/otp.js";
-import User from "../Modals/auth.js";
+import User from "../Modals/Auth.js";
 
 export const verifyOTP = async (req, res) => {
   const {
