@@ -1,0 +1,19 @@
+# Dependencies
+**/node_modules/
+
+# Environment files
+**/.env
+**/.env.local
+
+# Next.js
+**/.next/
+
+# Build files
+dist/
+build/
+
+# Uploads
+server/uploads/
+
+.git_old/
+0_backup/
