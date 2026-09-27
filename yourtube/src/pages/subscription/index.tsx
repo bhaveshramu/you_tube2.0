@@ -92,10 +92,17 @@ const Subscription = () => {
             );
 
             if (verify.data.success) {
-              alert("Subscription upgraded successfully!");
+  alert("Subscription upgraded successfully!");
 
-              router.reload();
-            }
+  const updatedUser = {
+    ...user,
+    plan,
+  };
+
+  localStorage.setItem("user", JSON.stringify(updatedUser));
+
+  window.location.reload();
+}
           } catch (error: any) {
             console.log("Payment verification error:", error);
 

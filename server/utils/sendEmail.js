@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 export const sendSubscriptionEmail = async (
   email,
@@ -8,17 +8,13 @@ export const sendSubscriptionEmail = async (
   orderId
 ) => {
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL,
-        pass: process.env.EMAIL_PASSWORD,
-      },
-    });
+    console.log("Sending subscription email with Resend...");
 
-    const info = await transporter.sendMail({
-      from: process.env.EMAIL,
-      to: email,
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    const { data, error } = await resend.emails.send({
+      from: "YourTube <onboarding@resend.dev>",
+      to: [email],
       subject: "Subscription Upgrade Successful",
       html: `
         <h2>Hello ${name},</h2>
@@ -35,14 +31,18 @@ export const sendSubscriptionEmail = async (
       `,
     });
 
-    console.log("Subscription email sent:", info.messageId);
+    if (error) {
+      console.error("Resend subscription email error:", error);
+      throw new Error(
+        error.message || "Failed to send subscription email"
+      );
+    }
 
-    return info;
+    console.log("Subscription email sent:", data?.id);
+
+    return data;
   } catch (error) {
-    console.error("Subscription email sending failed!");
-    console.error("Error code:", error.code);
-    console.error("Error message:", error.message);
-
+    console.error("Subscription email sending failed:", error);
     throw error;
   }
 };
