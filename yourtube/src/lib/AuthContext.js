@@ -16,6 +16,7 @@ import { provider, auth } from "./firebase";
 import axiosInstance from "./axiosinstance";
 
 const UserContext = createContext(null);
+const [loginRequested, setLoginRequested] = useState(false);
 
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -213,27 +214,48 @@ export const UserProvider = ({ children }) => {
   };
 
   const handlegooglesignin = async () => {
-    try {
-      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+  try {
+    setLoginRequested(true);
 
-      // onAuthStateChanged will handle the login
-    } catch (error) {
-  console.error("Google sign-in error:", error);
-  console.error("Error code:", error?.code);
-  console.error("Error message:", error?.message);
-    }
-  };
+    await signInWithPopup(
+      auth,
+      provider,
+      browserPopupRedirectResolver
+    );
+
+  } catch (error) {
+    console.error("Google sign-in error:", error);
+    console.error("Error code:", error?.code);
+    console.error("Error message:", error?.message);
+
+    setLoginRequested(false);
+  }
+};
 
   // Restore Firebase login
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (firebaseuser) => {
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    async (firebaseuser) => {
+      try {
         if (!firebaseuser) {
+          const savedUser =
+            localStorage.getItem("user");
+
+          if (savedUser) {
+            try {
+              setUser(JSON.parse(savedUser));
+            } catch (error) {
+              console.error(
+                "Failed to restore user:",
+                error
+              );
+            }
+          }
+
           return;
         }
 
-        // OTP verification is already pending
         const existingPendingLogin =
           sessionStorage.getItem("pendingLogin");
 
@@ -241,19 +263,27 @@ export const UserProvider = ({ children }) => {
           return;
         }
 
-        try {
-          await processLogin(firebaseuser);
-        } catch (error) {
-          console.error(
-            "Login error:",
-            error
+        // Only process login when the user
+        // intentionally clicked Google Sign In
+        if (!loginRequested) {
+          console.log(
+            "Firebase session restored. Skipping automatic login."
           );
+          return;
         }
-      }
-    );
 
-    return () => unsubscribe();
-  }, []);
+        await processLogin(firebaseuser);
+
+      } catch (error) {
+        console.error("Login error:", error);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+  );
+
+  return () => unsubscribe();
+}, [loginRequested]);
 
   // Verify OTP
   const verifyOTP = async (otp) => {
