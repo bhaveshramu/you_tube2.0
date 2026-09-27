@@ -1,6 +1,6 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
-import User from "../Modals/auth.js";
+import User from "../Modals/Auth.js";
 import { sendSubscriptionEmail } from "../utils/sendEmail.js";
 
 export const createOrder = async (req, res) => {
