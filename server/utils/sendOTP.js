@@ -1,14 +1,23 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
 
 export const sendOTPEmail = async (email, otp) => {
+  const { address } = await dns.promises.lookup("smtp.gmail.com", {
+    family: 4,
+  });
+
+  console.log("Gmail SMTP IPv4:", address);
+
   const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
+    host: address,
     port: 587,
     secure: false,
-    family: 4,
     auth: {
       user: process.env.EMAIL,
       pass: process.env.EMAIL_PASSWORD,
+    },
+    tls: {
+      servername: "smtp.gmail.com",
     },
   });
 
