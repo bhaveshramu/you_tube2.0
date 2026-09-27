@@ -21,11 +21,10 @@ export const sendOTPEmail = async (email, otp) => {
     },
   });
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: process.env.EMAIL,
     to: email,
     subject: "YourTube Login Verification OTP",
-
     html: `
       <h2>YourTube Login Verification</h2>
 
@@ -38,4 +37,6 @@ export const sendOTPEmail = async (email, otp) => {
       <p>If you did not attempt to log in, please secure your account.</p>
     `,
   });
+
+  console.log("OTP email sent:", info.messageId);
 };
