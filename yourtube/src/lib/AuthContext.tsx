@@ -1,7 +1,11 @@
+"use client";
+
 import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
+  browserPopupRedirectResolver,
+  type User as FirebaseUser,
 } from "firebase/auth";
 
 import {
@@ -15,7 +19,6 @@ import {
 import { provider, auth } from "./firebase";
 import axiosInstance from "./axiosinstance";
 import { useRouter } from "next/router";
-
 
 // ==============================
 // TYPES
@@ -46,29 +49,21 @@ type PendingLogin = {
 
 type UserContextType = {
   user: User | null;
-
   login: (userdata: User) => void;
-
   logout: () => Promise<void>;
-
   handlegooglesignin: () => Promise<void>;
-
   changeTheme: (theme: Theme) => Promise<void>;
-
   otpRequired: boolean;
-
   pendingLogin: PendingLogin | null;
-
   verifyOTP: (otp: string) => Promise<void>;
 };
-
 
 // ==============================
 // CONTEXT
 // ==============================
 
-const UserContext = createContext<UserContextType | null>(null);
-
+const UserContext =
+  createContext<UserContextType | null>(null);
 
 // ==============================
 // USER PROVIDER
@@ -79,9 +74,15 @@ export const UserProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
+  const router = useRouter();
+
+  // Prevent duplicate backend login requests
   const loginProcessingRef = useRef(false);
 
   const [user, setUser] = useState<User | null>(null);
+
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
   const [otpRequired, setOtpRequired] =
     useState(false);
@@ -89,48 +90,99 @@ export const UserProvider = ({
   const [pendingLogin, setPendingLogin] =
     useState<PendingLogin | null>(null);
 
-  const router = useRouter();
-
-
   // ==============================
-  // RESTORE PENDING LOGIN
+  // RESTORE LOCAL USER + OTP STATE
   // ==============================
 
   useEffect(() => {
+    // Restore normal logged-in user
+    const savedUser =
+      localStorage.getItem("user");
 
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error(
+          "Failed to restore saved user:",
+          error
+        );
+
+        localStorage.removeItem("user");
+      }
+    }
+
+    // Restore pending OTP login
     const savedPendingLogin =
       sessionStorage.getItem("pendingLogin");
 
     if (savedPendingLogin) {
-
       try {
+        const parsedPendingLogin =
+          JSON.parse(savedPendingLogin);
 
         setPendingLogin(
-          JSON.parse(savedPendingLogin)
+          parsedPendingLogin
         );
 
         setOtpRequired(true);
-
       } catch (error) {
-
         console.error(
           "Pending login restore error:",
           error
         );
 
+        sessionStorage.removeItem(
+          "pendingLogin"
+        );
       }
-
     }
 
+    setAuthLoading(false);
   }, []);
 
+  // ==============================
+  // FIREBASE AUTH STATE
+  // ==============================
+  //
+  // IMPORTANT:
+  // This listener does NOT call processLogin().
+  //
+  // Firebase can restore an existing session when
+  // the website opens. That must NOT trigger OTP.
+  //
+  // Actual backend login happens only inside
+  // handlegooglesignin() AFTER signInWithPopup()
+  // successfully returns.
+  // ==============================
+
+  useEffect(() => {
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    (firebaseuser) => {
+      if (firebaseuser) {
+        console.log(
+          "Firebase session detected:",
+          firebaseuser.email
+        );
+      } else {
+        console.log(
+          "No Firebase session."
+        );
+      }
+    }
+  );
+
+  return () => {
+    unsubscribe();
+  };
+}, []);
 
   // ==============================
   // LOGIN
   // ==============================
 
   const login = (userdata: User) => {
-
     setUser(userdata);
 
     localStorage.setItem(
@@ -139,56 +191,50 @@ export const UserProvider = ({
     );
 
     setOtpRequired(false);
-
     setPendingLogin(null);
 
     sessionStorage.removeItem(
       "pendingLogin"
     );
-
   };
-
 
   // ==============================
   // LOGOUT
   // ==============================
 
   const logout = async () => {
-
     setUser(null);
 
     setOtpRequired(false);
 
     setPendingLogin(null);
 
+    loginProcessingRef.current = false;
+
     localStorage.removeItem("user");
-    sessionStorage.removeItem("pendingLogin");
+
+    sessionStorage.removeItem(
+      "pendingLogin"
+    );
 
     try {
-
       await signOut(auth);
+
       router.replace("/");
-
     } catch (error) {
-
       console.error(
         "Logout error:",
         error
       );
-
     }
-
   };
-
 
   // ==============================
   // GET LOCATION
   // ==============================
 
   const getLocation = async () => {
-
     try {
-
       const response =
         await fetch(
           "https://ipapi.co/json/"
@@ -201,9 +247,7 @@ export const UserProvider = ({
         city: data.city || "",
         state: data.region || "",
       };
-
     } catch (error) {
-
       console.error(
         "Location error:",
         error
@@ -213,35 +257,28 @@ export const UserProvider = ({
         city: "",
         state: "",
       };
-
     }
-
   };
-
 
   // ==============================
   // GET DEVICE ID
   // ==============================
 
   const getDeviceId = () => {
-
     let deviceId =
       localStorage.getItem(
         "yourTubeDeviceId"
       );
 
     if (!deviceId) {
-
       if (
         typeof crypto !== "undefined" &&
-        crypto.randomUUID
+        typeof crypto.randomUUID ===
+          "function"
       ) {
-
         deviceId =
           crypto.randomUUID();
-
       } else {
-
         deviceId =
           "device-" +
           Date.now() +
@@ -249,77 +286,86 @@ export const UserProvider = ({
           Math.random()
             .toString(36)
             .substring(2);
-
       }
 
       localStorage.setItem(
         "yourTubeDeviceId",
         deviceId
       );
-
     }
 
     return deviceId;
-
   };
-
 
   // ==============================
   // PROCESS GOOGLE LOGIN
   // ==============================
 
   const processLogin = async (
-    firebaseuser: any
+    firebaseuser: FirebaseUser
   ) => {
     if (loginProcessingRef.current) {
-      console.log("Login already processing. Skipping duplicate request.");
+      console.log(
+        "Login already processing. Skipping duplicate request."
+      );
+
       return;
     }
 
     loginProcessingRef.current = true;
 
-    const existingPendingLogin =
-      sessionStorage.getItem(
-        "pendingLogin"
+    try {
+      // Do not start another request if
+      // OTP verification is already pending.
+      const existingPendingLogin =
+        sessionStorage.getItem(
+          "pendingLogin"
+        );
+
+      if (existingPendingLogin) {
+        console.log(
+          "OTP verification already pending."
+        );
+
+        return;
+      }
+
+      console.log(
+        "Processing selected Google account:",
+        firebaseuser.email
       );
 
-    if (existingPendingLogin) {
+      // Get location
+      const location =
+        await getLocation();
 
-      return;
+      // Get device ID
+      const deviceId =
+        getDeviceId();
 
-    }
+      // Prepare backend payload
+      const payload = {
+        email:
+          firebaseuser.email || "",
 
+        name:
+          firebaseuser.displayName || "",
 
-    const location =
-      await getLocation();
+        image:
+          firebaseuser.photoURL || "",
 
-    const deviceId =
-      getDeviceId();
+        city:
+          location.city,
 
+        state:
+          location.state,
 
-    const payload = {
+        deviceId,
+      };
 
-      email:
-        firebaseuser.email || "",
-
-      name:
-        firebaseuser.displayName || "",
-
-      image:
-        firebaseuser.photoURL || "",
-
-      city:
-        location.city,
-
-      state:
-        location.state,
-
-      deviceId,
-
-    };
-
-
-    try {
+      console.log(
+        "Sending login information to backend..."
+      );
 
       const response =
         await axiosInstance.post(
@@ -327,43 +373,39 @@ export const UserProvider = ({
           payload
         );
 
-
-      // ==========================
+      // ==============================
       // OTP REQUIRED
-      // ==========================
+      // ==============================
 
       if (
         response.data.requiresOTP
       ) {
+        const pendingData: PendingLogin =
+          {
+            email:
+              firebaseuser.email || "",
 
-        const pendingData: PendingLogin = {
+            name:
+              firebaseuser.displayName ||
+              "",
 
-          email:
-            firebaseuser.email || "",
+            image:
+              firebaseuser.photoURL || "",
 
-          name:
-            firebaseuser.displayName || "",
+            city:
+              location.city,
 
-          image:
-            firebaseuser.photoURL || "",
+            state:
+              location.state,
 
-          city:
-            location.city,
-
-          state:
-            location.state,
-
-          deviceId,
-
-        };
-
+            deviceId,
+          };
 
         setPendingLogin(
           pendingData
         );
 
         setOtpRequired(true);
-
 
         sessionStorage.setItem(
           "pendingLogin",
@@ -372,120 +414,83 @@ export const UserProvider = ({
           )
         );
 
+        console.log(
+          "OTP required. Redirecting to /verify-otp"
+        );
 
         window.location.href =
           "/verify-otp";
 
         return;
-
       }
 
-
-      // ==========================
+      // ==============================
       // NORMAL LOGIN
-      // ==========================
+      // ==============================
+
+      console.log(
+        "Normal login successful."
+      );
 
       login(
         response.data.result
       );
-
     } catch (error) {
-
       console.error(
-        "Login error:",
+        "Login processing error:",
         error
       );
-
+    } finally {
+      loginProcessingRef.current =
+        false;
     }
-
   };
-
 
   // ==============================
   // GOOGLE SIGN IN
   // ==============================
 
-  const handlegooglesignin =
-    async () => {
+ const handlegooglesignin = async () => {
+  try {
+    console.log("Google Sign In button clicked.");
 
-      try {
+    setAuthLoading(true);
 
-        await signInWithPopup(
-          auth,
-          provider
-        );
+    const result = await signInWithPopup(
+      auth,
+      provider,
+      browserPopupRedirectResolver
+    );
 
-      } catch (error) {
+    // This executes only AFTER the Google
+    // popup has completed and an account
+    // has been selected.
+    console.log(
+      "Google account selected:",
+      result.user.email
+    );
 
-        console.error(
-          "Google sign-in error:",
-          error
-        );
+    // Only now contact the backend.
+    await processLogin(result.user);
+  } catch (error: any) {
+    console.error(
+      "Google sign-in error:",
+      error
+    );
 
-      }
+    console.error(
+      "Error code:",
+      error?.code
+    );
 
-    };
-
-
-  // ==============================
-  // FIREBASE AUTH STATE
-  // ==============================
-
-  useEffect(() => {
-
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        async (firebaseuser) => {
-
-          if (!firebaseuser) {
-
-            return;
-
-          }
-
-
-          const existingPendingLogin =
-            sessionStorage.getItem(
-              "pendingLogin"
-            );
-
-          if (
-            existingPendingLogin
-          ) {
-
-            return;
-
-          }
-
-
-          try {
-
-            await processLogin(
-              firebaseuser
-            );
-
-          } catch (error) {
-
-            console.error(
-              "Authentication error:",
-              error
-            );
-
-          }
-
-        }
-      );
-
-
-    return () => {
-
-      unsubscribe();
-
-    };
-
-  }, []);
-
+    console.error(
+      "Error message:",
+      error?.message
+    );
+  } finally {
+    setAuthLoading(false);
+  }
+};
 
   // ==============================
   // VERIFY OTP
@@ -494,20 +499,15 @@ export const UserProvider = ({
   const verifyOTP = async (
     otp: string
   ) => {
-
     if (!pendingLogin) {
-
       console.error(
         "No pending login found."
       );
 
       return;
-
     }
 
-
     try {
-
       const response =
         await axiosInstance.post(
           "/otp/verify",
@@ -534,49 +534,49 @@ export const UserProvider = ({
           }
         );
 
-
       if (
         response.data.result
       ) {
-
         login(
           response.data.result
         );
 
         window.location.href =
           "/";
-
       }
-
     } catch (error) {
-
       console.error(
         "OTP verification error:",
         error
       );
 
       throw error;
-
     }
-
   };
-
 
   // ==============================
   // CHANGE THEME
   // ==============================
 
-  const changeTheme = async (theme: Theme) => {
-    if (!user) return;
+  const changeTheme = async (
+    theme: Theme
+  ) => {
+    if (!user) {
+      return;
+    }
 
     // Apply theme immediately
     if (theme === "dark") {
-      document.documentElement.classList.add("dark");
+      document.documentElement.classList.add(
+        "dark"
+      );
     } else {
-      document.documentElement.classList.remove("dark");
+      document.documentElement.classList.remove(
+        "dark"
+      );
     }
 
-    // Update React + localStorage immediately
+    // Update React state
     const updatedUser = {
       ...user,
       theme,
@@ -584,83 +584,80 @@ export const UserProvider = ({
     };
 
     setUser(updatedUser);
-    localStorage.setItem("user", JSON.stringify(updatedUser));
 
-    // Tell _app.tsx immediately
+    // Save locally
+    localStorage.setItem(
+      "user",
+      JSON.stringify(updatedUser)
+    );
+
+    // Notify _app.tsx
     window.dispatchEvent(
-      new CustomEvent("yourtube-theme-change", {
-        detail: theme,
-      })
+      new CustomEvent(
+        "yourtube-theme-change",
+        {
+          detail: theme,
+        }
+      )
     );
 
     // Save to MongoDB
     try {
-      await axiosInstance.patch(`/user/update/${user._id}`, {
-        theme,
-        themeMode: "manual",
-      });
+      await axiosInstance.patch(
+        `/user/update/${user._id}`,
+        {
+          theme,
+          themeMode: "manual",
+        }
+      );
 
-      console.log("Theme saved:", theme);
+      console.log(
+        "Theme saved:",
+        theme
+      );
     } catch (error) {
-      console.error("Theme save error:", error);
+      console.error(
+        "Theme save error:",
+        error
+      );
     }
   };
-
 
   // ==============================
   // PROVIDER
   // ==============================
 
   return (
-
     <UserContext.Provider
       value={{
         user,
-
         login,
-
         logout,
-
         handlegooglesignin,
-
         changeTheme,
-
         otpRequired,
-
         pendingLogin,
-
         verifyOTP,
       }}
     >
-
       {children}
-
     </UserContext.Provider>
-
   );
-
 };
-
 
 // ==============================
 // USE USER HOOK
 // ==============================
 
 export const useUser = () => {
-
   const context =
     useContext(UserContext);
 
-
   if (!context) {
-
     throw new Error(
       "useUser must be used inside UserProvider"
     );
-
   }
 
-
   return context;
-
 };
