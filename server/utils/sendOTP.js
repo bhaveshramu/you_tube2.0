@@ -1,32 +1,49 @@
-import { Resend } from "resend";
+import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
 
 export const sendOTPEmail = async (email, otp) => {
   try {
-    console.log("Sending OTP email with Resend...");
+    console.log("Sending OTP email with MailerSend...");
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
-
-    const { data, error } = await resend.emails.send({
-      from: "YourTube <onboarding@resend.dev>",
-      to: [email],
-      subject: "YourTube Login Verification OTP",
-      html: `
-        <h2>YourTube Login Verification</h2>
-        <p>Your OTP for login verification is:</p>
-        <h1>${otp}</h1>
-        <p>This OTP is valid for 5 minutes.</p>
-      `,
+    const mailerSend = new MailerSend({
+      apiKey: process.env.MAILERSEND_API_KEY,
     });
 
-    if (error) {
-      console.error("Resend email error:", error);
-      throw new Error(error.message || "Failed to send OTP email");
-    }
+    const sentFrom = new Sender(
+      "info@test-eqvygm06nodl0p7w.mlsender.net",
+      "YourTube"
+    );
 
-    console.log("OTP email sent successfully:", data?.id);
-    return data;
+    const recipients = [
+      new Recipient(email, "YourTube User"),
+    ];
+
+    const emailParams = new EmailParams()
+      .setFrom(sentFrom)
+      .setTo(recipients)
+      .setReplyTo(sentFrom)
+      .setSubject("YourTube Login Verification OTP")
+      .setHtml(`
+        <h2>YourTube Login Verification</h2>
+
+        <p>Your OTP for login verification is:</p>
+
+        <h1>${otp}</h1>
+
+        <p>This OTP is valid for 5 minutes.</p>
+
+        <p>If you did not request this OTP, you can ignore this email.</p>
+      `)
+      .setText(
+        `YourTube Login Verification\n\nYour OTP is: ${otp}\n\nThis OTP is valid for 5 minutes.`
+      );
+
+    const response = await mailerSend.email.send(emailParams);
+
+    console.log("OTP email sent successfully:", response);
+
+    return response;
   } catch (error) {
-    console.error("OTP email sending failed:", error);
+    console.error("MailerSend OTP email error:", error);
     throw error;
   }
 };
